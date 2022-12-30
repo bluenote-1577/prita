@@ -1,5 +1,4 @@
 use crate::cmdline::*;
-use rkyv::{Archive, Deserialize, Serialize};
 use crate::types::*;
 use log::*;
 use rayon::prelude::*;
@@ -12,14 +11,14 @@ use std::io::BufReader;
 
 
 pub fn load(args: Load) {
-    let sequence_bytes = read(args.query_sketch).expect("Sequence sketch not a valid file");
-    let archived = unsafe { rkyv::archived_root::<SequencesSketch>(&sequence_bytes[..]) };
-    let sequence_sketch: SequencesSketch = archived.deserialize(&mut rkyv::Infallible).unwrap();
+    let sequence_file = File::open(args.query_sketch).expect("Sequence sketch not a valid file");
+    let seq_reader = BufReader::with_capacity(10_000_000,sequence_file);
+    let sequence_sketch: SequencesSketch = bincode::deserialize_from(seq_reader).unwrap();
     info!("Sequence sketch loading complete.");
 
-    let genome_bytes = read(args.references_sketch).expect("Genome sketch not a valid file");
-    let archived = unsafe { rkyv::archived_root::<GenomesSketch>(&genome_bytes[..]) };
-    let genome_sketch: GenomesSketch = archived.deserialize(&mut rkyv::Infallible).unwrap();
+    let genome_file = File::open(args.references_sketch).expect("Genome sketch not a valid file");
+    let genome_reader = BufReader::with_capacity(10_000_000, genome_file);
+    let genome_sketch: GenomesSketch = bincode::deserialize_from(genome_reader).unwrap();
 
     info!("Genome sketch loading complete.");
     if genome_sketch.k != sequence_sketch.k {

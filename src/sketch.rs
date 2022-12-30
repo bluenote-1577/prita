@@ -69,8 +69,8 @@ pub fn sketch_query(args: &Sketch) -> SequencesSketch {
         }
         read_parallel(
             reader,
-            20,
-            200,
+            10,
+            100,
             |record_set| {
                 // this function does the heavy work
                 let mut vec = vec![];
@@ -105,8 +105,8 @@ pub fn sketch_query(args: &Sketch) -> SequencesSketch {
         }
         read_parallel(
             reader,
-            20,
-            200,
+            10,
+            100,
             |record_set| {
                 // this function does the heavy work
                 let mut vec = vec![];
