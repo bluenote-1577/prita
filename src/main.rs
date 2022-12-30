@@ -1,4 +1,6 @@
 use clap::Parser;
+use rkyv::ser::{Serializer, serializers::AllocSerializer};
+use rkyv::ser::{serializers::WriteSerializer};
 use log::*;
 use linfa::prelude::*;
 use linfa_elasticnet::{ElasticNet, Result};
@@ -17,21 +19,26 @@ use log::LevelFilter;
 pub fn sketch(args: Sketch) {
     if !args.query.is_none(){
         let query_sketch = sketch_query(&args);
-        //        let read_sketch = sketch_sequences_needle(&sequences);
-        let encoded: Vec<u8> = bincode::serialize(&query_sketch).unwrap();
+        info!("Sketching query done. Serializing...");
+        let mut serializer = AllocSerializer::<10000000>::default();
+        serializer.serialize_value(&query_sketch).unwrap();
+        let bytes = serializer.into_serializer().into_inner();
         let mut query_sk_file = BufWriter::new(File::create(args.query_sketch_output.clone()).unwrap());
-        query_sk_file.write_all(&encoded).unwrap();
+        query_sk_file.write_all(&bytes).unwrap();
     }
     if !args.references.is_none() || !args.reference_list.is_none(){
         if !args.references.is_none() && !args.reference_list.is_none(){
             panic!("Only one of --rl or -r can be specified.");
         }
         let references_sketch = sketch_references(&args);
-        info!("Sketching done. Serializing...");
-        let encoded: Vec<u8> = bincode::serialize(&references_sketch).unwrap();
+        info!("Sketching reference done. Serializing...");
         let mut references_sk_file = BufWriter::new(File::create(args.reference_sketch_output).unwrap());
-        references_sk_file.write_all(&encoded).unwrap();
+        let mut serializer = AllocSerializer::<4096>::default();
+        serializer.serialize_value(&references_sketch).unwrap();
+        let bytes = serializer.into_serializer().into_inner();
+        references_sk_file.write_all(&bytes).unwrap();
     }
+    info!("Finished.");
 }
 
 

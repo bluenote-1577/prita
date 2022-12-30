@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use rkyv::{Archive, Deserialize, Serialize};
+// bytecheck can be used to validate your data if you want
+use bytecheck::CheckBytes;
 use nohash_hasher::IntMap;
 use nohash_hasher::IntSet;
 use std::hash::{BuildHasherDefault, Hash, Hasher};
 use rustc_hash::FxHashMap;
 use nohash_hasher::BuildNoHashHasher;
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 pub type Kmer = u64;
@@ -59,7 +61,7 @@ pub type MMBuildHasher = BuildHasherDefault<MMHasher>;
 pub type MMHashMap<K, V> = HashMap<K, V, MMBuildHasher>;
 pub type MMHashSet<K> = HashSet<K, MMBuildHasher>;
 
-#[derive(Default, Deserialize, Serialize, Debug, PartialEq)]
+#[derive(Archive, Default, Deserialize, Serialize, Debug, PartialEq)]
 pub struct SequencesSketch{
 //    pub kmer_counts: HashMap<Kmer, u32,BuildNoHashHasher<Kmer>>,
     pub kmer_counts: HashMap<Kmer, u32>,
@@ -75,7 +77,9 @@ impl SequencesSketch{
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq)]
+#[derive(Archive, Deserialize, Serialize, Debug, PartialEq)]
+// This will generate a PartialEq impl between our unarchived and archived types
+// To use the safe API, you have to derive CheckBytes for the archived type
 #[derive(Default)]
 pub struct GenomesSketch{
     pub genome_kmer_counts: Vec<IntSet<Kmer>>,

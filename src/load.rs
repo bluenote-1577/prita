@@ -1,4 +1,5 @@
 use crate::cmdline::*;
+use rkyv::{Archive, Deserialize, Serialize};
 use crate::types::*;
 use log::*;
 use rayon::prelude::*;
@@ -11,11 +12,15 @@ use std::io::BufReader;
 
 
 pub fn load(args: Load) {
-    let sequence_sketch: SequencesSketch = bincode::deserialize(&read(args.query_sketch).expect("Sequence sketch not a valid file")).unwrap();
+    let sequence_bytes = read(args.query_sketch).expect("Sequence sketch not a valid file");
+    let archived = unsafe { rkyv::archived_root::<SequencesSketch>(&sequence_bytes[..]) };
+    let sequence_sketch: SequencesSketch = archived.deserialize(&mut rkyv::Infallible).unwrap();
     info!("Sequence sketch loading complete.");
 
-//    let genome_bytes = read(args.references_sketch).expect("Genome sketch not a valid file");
-    let genome_sketch: GenomesSketch = bincode::deserialize(&read(args.references_sketch).expect("Genome sketch not a valid file")).unwrap();
+    let genome_bytes = read(args.references_sketch).expect("Genome sketch not a valid file");
+    let archived = unsafe { rkyv::archived_root::<GenomesSketch>(&genome_bytes[..]) };
+    let genome_sketch: GenomesSketch = archived.deserialize(&mut rkyv::Infallible).unwrap();
+
     info!("Genome sketch loading complete.");
     if genome_sketch.k != sequence_sketch.k {
         panic!(
@@ -187,8 +192,8 @@ pub fn em(
         .map(|(_, x)| x.len() as f64)
         .collect();
     let mut kmer_union: MMHashSet<_> = MMHashSet::default();
-    let mut equiv_classes: MMHashMap<Vec<usize>, usize> = MMHashMap::default();
-    let mut kmer_to_refs: MMHashMap<u64, Vec<usize>> = MMHashMap::default();
+    let mut equiv_classes: HashMap<Vec<usize>, usize> = HashMap::default();
+    let mut kmer_to_refs: HashMap<u64, Vec<usize>> = HashMap::default();
     for (iter_num, i) in useable_refs.iter().enumerate() {
         let kmer_map = &genome_sketch.genome_kmer_counts[*i];
         let mut useable_count = 0;
@@ -273,7 +278,7 @@ fn correct_ani_abund(ani: f64, covs: &Vec<u32>, k: f64) -> f64 {
         return ani;
     }
 
-    let mut counts: MMHashMap<_, _> = MMHashMap::default();
+    let mut counts: HashMap<_, _> = HashMap::default();
     for cov in covs.iter() {
         let c = counts.entry(cov).or_insert(0);
         *c += 1;
