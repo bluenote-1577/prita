@@ -2,6 +2,29 @@ use crate::types::*;
 use smallvec::SmallVec;
 use std::arch::x86_64::*;
 
+pub fn decode(byte: u64) -> u8 {
+        if byte == 0 {
+            return b'A';
+        } else if byte == 1 {
+            return b'C';
+        } else if byte == 2 {
+            return b'G';
+        } else if byte == 3 {
+            return b'T';
+        } else {
+            panic!("decoding failed")
+        }
+    }
+pub fn print_string(kmer: u64, k: usize) {
+        let mut bytes = vec![];
+        let mask = 3;
+        for i in 0..k {
+            let val = kmer >> 2 * i;
+            let val = val & mask;
+            bytes.push(decode(val));
+        }
+        dbg!(std::str::from_utf8(&bytes.into_iter().rev().collect::<Vec<u8>>()).unwrap());
+    }
 #[inline]
 fn _position_min<T: Ord>(slice: &[T]) -> Option<usize> {
     slice
@@ -199,9 +222,8 @@ pub unsafe fn extract_markers_avx2(string: &[u8], kmer_vec: &mut Vec<u64>, c: us
         rev_marker_mask,
     );
 
-    //dbg!(KmerEnc::print_string(u64::from_le_bytes(_mm256_extract_epi64(rolling_kmer_f_marker,0).to_le_bytes()), 21));
 
-    for i in k..(len + k - 1) {
+    for i in k-1..(len + k - 1) {
         let nuc_f1 = BYTE_TO_SEQ[string1[i] as usize] as i64;
         let nuc_f2 = BYTE_TO_SEQ[string2[i] as usize] as i64;
         let nuc_f3 = BYTE_TO_SEQ[string3[i] as usize] as i64;
@@ -229,6 +251,8 @@ pub unsafe fn extract_markers_avx2(string: &[u8], kmer_vec: &mut Vec<u64>, c: us
         let canonical_markers_256 =
             _mm256_blendv_epi8(rolling_kmer_r_marker, rolling_kmer_f_marker, compare_marker);
 
+//        dbg!(rolling_kmer_f_marker,rolling_kmer_r_marker);
+//        dbg!(print_string(u64::from_ne_bytes(_mm256_extract_epi64(rolling_kmer_f_marker,1).to_ne_bytes()), 31));
         let hash_256 = mm_hash256(canonical_markers_256);
         let v1 = _mm256_extract_epi64(hash_256, 0) as u64;
         let v2 = _mm256_extract_epi64(hash_256, 1) as u64;

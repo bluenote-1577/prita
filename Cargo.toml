@@ -1,0 +1,46 @@
+[package]
+name = "prita"
+version = "1.0.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+thiserror = "1.0"
+needletail = "*"
+simple-logging= "*"
+log = "*"
+rayon = "*"
+nohash-hasher = "*"
+smallvec = { version = "*", features = ["union","serde","write"] }
+serde = { version = "*", features = ["derive"] }
+bincode = "*"
+tikv-jemallocator = "*"
+seq_io = "*"
+fxhash = "*"
+nohash = "*"
+clap = { version = "4.0.29", features = ["derive"] }
+linfa = { version = "*", features = ["openblas-static"] }
+linfa-elasticnet = "*"
+ndarray = "*"
+flate2="*"
+rustc-hash="*"
+
+
+[dev-dependencies]
+assert_cmd = "1.0.1"
+predicates = "1"
+serial_test = "*"
+
+
+
+[profile.release]
+panic = "abort"
+
+[profile.dev]
+#opt-level = 1
+opt-level = 3
+
+#[rust]
+#debuginfo-level = 1

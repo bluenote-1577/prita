@@ -1,8 +1,11 @@
 use clap::Parser;
-use log::*;
+use rayon::prelude::*;
+use std::path::Path;
 use linfa::prelude::*;
 use linfa_elasticnet::{ElasticNet, Result};
 use linfa_elasticnet::{ElasticNetError, ElasticNetParams};
+use log::LevelFilter;
+use log::*;
 use ndarray::{array, s, Array, Array2};
 use prita::cmdline::*;
 use prita::load::*;
@@ -12,28 +15,38 @@ use std::collections::HashMap;
 use std::fs::read;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
-use log::LevelFilter;
 
 pub fn sketch(args: Sketch) {
-    if !args.query.is_none(){
-        let query_sketch = sketch_query(&args);
-        info!("Sketching query done. Serializing...");
-        let mut query_sk_file = BufWriter::new(File::create(args.query_sketch_output.clone()).unwrap());
-        bincode::serialize_into(&mut query_sk_file, &query_sketch).unwrap();
+    if !args.queries.is_none() {
+        let queries = args.queries.as_ref().unwrap();
+        let iter_vec : Vec<usize> = (0..queries.len()).into_iter().collect();
+        iter_vec.into_par_iter().for_each(|i| {
+            let query_file = &queries[i];
+            let pref = Path::new(&args.query_sketch_output_prefix);
+            let query_file_name = Path::new(query_file).file_name().unwrap();
+            let file_path = pref.join(query_file_name);
+            let file_path_str = format!("{}.prs", file_path.to_str().unwrap());
+            let mut query_sk_file = BufWriter::new(File::create(&file_path_str).expect(&format!("{} not valid", file_path_str)));
+
+            let query_sketch = sketch_query(&args, query_file);
+            info!("Sketching query done. Serializing...");
+            let enc = SequencesSketchEncode::new(query_sketch);
+            bincode::serialize_into(&mut query_sk_file, &enc).unwrap();
+        });
     }
-    if !args.references.is_none() || !args.reference_list.is_none(){
-        if !args.references.is_none() && !args.reference_list.is_none(){
+    if !args.references.is_none() || !args.reference_list.is_none() {
+        if !args.references.is_none() && !args.reference_list.is_none() {
             panic!("Only one of --rl or -r can be specified.");
         }
         let references_sketch = sketch_references(&args);
         info!("Sketching reference done. Serializing...");
-        let mut ref_sk_file = BufWriter::new(File::create(args.reference_sketch_output.clone()).unwrap());
+
+        let mut ref_sk_file =
+            BufWriter::new(File::create(args.reference_sketch_output.clone()).unwrap());
         bincode::serialize_into(&mut ref_sk_file, &references_sketch).unwrap();
     }
     info!("Finished.");
 }
-
-
 
 //pub fn strain(args: Strain) {
 //    let sequence_bytes = read(args.sequences_sketch).expect("Sequence sketch not a valid file");
@@ -107,7 +120,7 @@ pub fn sketch(args: Sketch) {
 fn main() {
     simple_logging::log_to_stderr(LevelFilter::Info);
     rayon::ThreadPoolBuilder::new()
-        .num_threads(30)
+        .num_threads(10)
         .build_global()
         .unwrap();
 

@@ -1,4 +1,5 @@
 use crate::cmdline::*;
+use fxhash::FxHashSet;
 use crate::seeding::*;
 use crate::types::*;
 use flate2::read::GzDecoder;
@@ -18,43 +19,43 @@ use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::sync::Mutex;
 
-pub fn sketch_query_needle(args: &Sketch) -> SequencesSketch {
-    let read_file = &args.query.as_ref().unwrap();
-    let mut kmer_map = HashMap::default();
-    let ref_file = &read_file;
-    let reader = parse_fastx_file(&ref_file);
-    let mut vec = vec![];
-    if !reader.is_ok() {
-        warn!("{} is not a valid fasta/fastq file; skipping.", ref_file);
-    } else {
-        let mut reader = reader.unwrap();
-        while let Some(record) = reader.next() {
-            if record.is_ok() {
-                let record = record.expect(&format!("Invalid record for file {}", ref_file));
-                let seq = record.seq();
-                unsafe {
-                    extract_markers_avx2(&seq, &mut vec, args.k, args.c);
-                }
-            } else {
-                warn!("File {} is not a valid fasta/fastq file", ref_file);
-            }
-        }
-        for km in vec {
-            let c = kmer_map.entry(km).or_insert(0);
-            *c += 1;
-        }
-    }
+//pub fn sketch_query_needle(args: &Sketch) -> SequencesSketch {
+//    let read_file = &args.query.as_ref().unwrap();
+//    let mut kmer_map = HashMap::default();
+//    let ref_file = &read_file;
+//    let reader = parse_fastx_file(&ref_file);
+//    let mut vec = vec![];
+//    if !reader.is_ok() {
+//        warn!("{} is not a valid fasta/fastq file; skipping.", ref_file);
+//    } else {
+//        let mut reader = reader.unwrap();
+//        while let Some(record) = reader.next() {
+//            if record.is_ok() {
+//                let record = record.expect(&format!("Invalid record for file {}", ref_file));
+//                let seq = record.seq();
+//                unsafe {
+//                    extract_markers_avx2(&seq, &mut vec, args.k, args.c);
+//                }
+//            } else {
+//                warn!("File {} is not a valid fasta/fastq file", ref_file);
+//            }
+//        }
+//        for km in vec {
+//            let c = kmer_map.entry(km).or_insert(0);
+//            *c += 1;
+//        }
+//    }
+//
+//    return SequencesSketch {
+//        kmer_counts: kmer_map,
+//        file_name: read_file.to_string(),
+//        c: args.c,
+//        k: args.k,
+//    };
+//}
 
-    return SequencesSketch {
-        kmer_counts: kmer_map,
-        file_name: read_file.to_string(),
-        c: args.c,
-        k: args.k,
-    };
-}
-
-pub fn sketch_query(args: &Sketch) -> SequencesSketch {
-    let read_file = &args.query.as_ref().unwrap();
+pub fn sketch_query(args: &Sketch, query_file: &str) -> SequencesSketch {
+    let read_file = query_file;
     let mut read_sketch = SequencesSketch::new(read_file.to_string(), args.c, args.k);
     if read_file.contains(".fq") || read_file.contains(".fastq") {
         let reader;
@@ -69,13 +70,13 @@ pub fn sketch_query(args: &Sketch) -> SequencesSketch {
         }
         read_parallel(
             reader,
-            10,
-            100,
+            5,
+            200,
             |record_set| {
-                // this function does the heavy work
                 let mut vec = vec![];
                 unsafe {
                     for record in record_set.into_iter() {
+//                        dbg!(String::from_utf8(record.seq().to_vec()));
                         extract_markers_avx2(record.seq(), &mut vec, args.c, args.k);
                     }
                 }
@@ -105,8 +106,8 @@ pub fn sketch_query(args: &Sketch) -> SequencesSketch {
         }
         read_parallel(
             reader,
-            10,
-            100,
+            5,
+            40,
             |record_set| {
                 // this function does the heavy work
                 let mut vec = vec![];
@@ -146,7 +147,7 @@ pub fn sketch_references(args: &Sketch) -> GenomesSketch {
     } else {
         genome_files = args.references.as_ref().unwrap();
     }
-    let kmer_maps: Mutex<Vec<_>> = Mutex::new(vec![IntSet::default(); genome_files.len()]);
+    let kmer_maps: Mutex<Vec<_>> = Mutex::new(vec![vec![]; genome_files.len()]);
     let index_vec = (0..genome_files.len()).collect::<Vec<usize>>();
     let count: Mutex<usize> = Mutex::new(0);
     index_vec.into_par_iter().for_each(|i| {
@@ -161,6 +162,7 @@ pub fn sketch_references(args: &Sketch) -> GenomesSketch {
                 if record.is_ok() {
                     let record = record.expect(&format!("Invalid record for file {}", ref_file));
                     let seq = record.seq();
+//                    dbg!(String::from_utf8(record.seq().to_vec()));
                     unsafe {
                         extract_markers_avx2(&seq, &mut vec, args.c, args.k);
                     }
@@ -168,12 +170,16 @@ pub fn sketch_references(args: &Sketch) -> GenomesSketch {
                     warn!("File {} is not a valid fasta/fastq file", ref_file);
                 }
             }
-            let mut kmer_set = IntSet::default();
+            let mut kmer_set = MMHashSet::default();
+            let mut new_vec = Vec::with_capacity(vec.len());
             for km in vec {
-                kmer_set.insert(km);
+                if !kmer_set.contains(&km){
+                    kmer_set.insert(km);
+                    new_vec.push(km);
+                }
             }
             let mut locked = kmer_maps.lock().unwrap();
-            locked[i] = kmer_set;
+            locked[i] = new_vec;
             let mut c = count.lock().unwrap();
             *c += 1;
             if *c % 100 == 0 && *c > 0 {
@@ -189,6 +195,19 @@ pub fn sketch_references(args: &Sketch) -> GenomesSketch {
         k: args.k,
     };
 
+//    info!("TEST");
+//    let mut t: Vec<MMHashSet<_>> = vec![MMHashSet::default();gn_sketch.file_names.len()];
+////    let mut t: Vec<Vec<_>> = vec![vec![];gn_sketch.file_names.len()];
+//    for (i,set) in gn_sketch.genome_kmer_counts.iter().enumerate(){
+//        t[i].reserve(set.len());
+//        for kmer in set{
+//            t[i].insert(*kmer);
+//        }
+//    }
+//    info!("TEST {}", t.len());
+///    let x = gn_sketch.clone();
+//    info!("TEST {}", x.file_names.len());
+//
     let ret;
     if args.derep < 1.00 && args.derep > 0.00 {
         ret = derep_genome_sketch(gn_sketch, args.derep, args.c);
@@ -254,7 +273,7 @@ fn derep_genome_sketch(genome_sketch: GenomesSketch, derep_val: f64, c: usize) -
         }
     }
 
-    let ret_kmer_map: Vec<IntSet<u64>> = genome_sketch
+    let ret_kmer_map: Vec<Vec<u64>> = genome_sketch
         .genome_kmer_counts
         .into_iter()
         .enumerate()
